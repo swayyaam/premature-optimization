@@ -1,7 +1,7 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 6: several copies of this run at once behind nginx, so the listen
-// address comes from the environment. See docs/06-horizontal-scaling.md.
+// Step 7: every redirect is counted, and the counting happens on a queue
+// rather than during the request. See docs/07-async-queue.md.
 package main
 
 import (
@@ -13,6 +13,8 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -152,7 +154,7 @@ func handleShorten(s *store) http.HandlerFunc {
 	}
 }
 
-func handleRedirect(s *store) http.HandlerFunc {
+func handleRedirect(s *store, clicks clickRecorder) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
 
@@ -167,6 +169,7 @@ func handleRedirect(s *store) http.HandlerFunc {
 			return
 		}
 
+		clicks.record(code)
 		http.Redirect(w, r, url, http.StatusFound)
 	}
 }
@@ -201,7 +204,9 @@ func openCache(ctx context.Context) *redis.Client {
 }
 
 func main() {
-	ctx := context.Background()
+	// ctx is cancelled the first time the process is asked to stop.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -223,17 +228,38 @@ func main() {
 	}
 
 	s := &store{db: db, cache: openCache(ctx)}
+	clicks := newClickRecorder(db)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shorten", handleShorten(s))
 	mux.HandleFunc("GET /healthz", handleHealth)
-	mux.HandleFunc("GET /{code}", handleRedirect(s))
+	mux.HandleFunc("GET /{code}", handleRedirect(s, clicks))
 
 	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = defaultAddr
 	}
 
-	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	srv := &http.Server{Addr: addr, Handler: mux}
+
+	// Serving happens on its own goroutine so main can wait for the signal.
+	go func() {
+		log.Printf("listening on %s", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	stop()
+	log.Print("stopping")
+
+	// Let requests already in progress finish, then write whatever clicks are
+	// still queued.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
+	}
+	clicks.close()
 }

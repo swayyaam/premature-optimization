@@ -309,3 +309,73 @@ do.
 Look in the cache, fall back to the database on a miss, then write what the database
 returned into the cache. The cache holds only copies of data that lives elsewhere, so
 losing it costs speed and not correctness.
+
+---
+
+## Step 7: [Counting clicks on a queue](07-async-queue.md)
+
+**channel**
+A pipe carrying values between goroutines, written `chan string`. `ch <- v` sends and
+`<-ch` receives. Close to a `BlockingQueue`, built into the language.
+
+**buffered channel**
+`make(chan string, 10000)` has room for ten thousand values. A send only waits once the
+room is full. An unbuffered channel makes every send wait for a receiver.
+
+**`go f()`**
+Starts a goroutine running that function. Several goroutines receiving from one channel
+each get a different value.
+
+**`select`**
+Waits on several channel operations and runs whichever is ready first. Used here to wait
+for either the next click or a ticker.
+
+**`select` with `default`**
+Makes the whole thing non-blocking. If nothing is ready right away, `default` runs
+instead. A send inside a `select` with a `default` either happens immediately or does not
+happen at all.
+
+**two value receive**
+`v, open := <-ch`. `open` is false once the channel is closed and empty, which is how a
+worker knows to finish.
+
+**`close(ch)`**
+Says no more values are coming. Values already in the channel are still received, and
+after that every receive reports the channel as closed.
+
+**`sync.WaitGroup`**
+Counts goroutines that have not finished. `Add(n)` before starting them, `Done` when each
+returns, `Wait` blocks until the count is zero. The job a `CountDownLatch` does.
+
+**`sync/atomic`, `atomic.Int64`**
+A counter several goroutines can change safely. A plain `int64` incremented from more
+than one goroutine is a data race.
+
+**`time.NewTicker`**
+A channel that receives a value at a fixed interval. Used to write a partly filled batch
+that would otherwise sit around waiting to fill.
+
+**`strings.Builder`**
+Builds a string without copying it on every append, the way `StringBuilder` does.
+
+**`any`**
+Go's name for a value of any type.
+
+**variadic call, `args...`**
+Passes a slice as separate arguments to a function that takes a variable number of them.
+
+**`signal.NotifyContext`**
+Returns a context that is cancelled when the process is asked to stop. `<-ctx.Done()`
+waits for it.
+
+**`http.Server` and `Shutdown`**
+Using a `http.Server` value instead of `http.ListenAndServe` allows `Shutdown`, which
+stops taking new connections and waits for the requests already running.
+
+**`http.ErrServerClosed`**
+What `ListenAndServe` returns after `Shutdown` is called. It means a clean stop and not a
+failure.
+
+**`context.WithTimeout`**
+Makes a context that cancels itself after a set time. Used here to put a limit on how
+long shutting down may take.

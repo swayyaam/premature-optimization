@@ -56,7 +56,7 @@ curl -i localhost:8080/<code-from-above>
 | 04 | Load testing with `hey`, and a repeatable method | [04-load-testing.md](docs/04-load-testing.md) | done |
 | 05 | Caching popular links in Redis | [05-caching.md](docs/05-caching.md) | done |
 | 06 | Several copies of the app behind nginx | [06-horizontal-scaling.md](docs/06-horizontal-scaling.md) | done |
-| 07 | A queue for slow work | | planned |
+| 07 | A queue for slow work | [07-async-queue.md](docs/07-async-queue.md) | done |
 | 08 | Rate limits, timeouts, and backpressure | | planned |
 | 09 | Structured logging and metrics | | planned |
 | 10 | Read replicas, and sharding if the numbers call for it | | planned |
