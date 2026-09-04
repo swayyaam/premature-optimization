@@ -1,0 +1,42 @@
+Step 8: the rate limit and the in flight limit doing their jobs
+
+Date:    2026-09-04 17:43 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+
+Both are off or generous by default, because every request in these tests comes
+from 127.0.0.1 and a per client rate limit would refuse the load generator
+itself. They are shown here with settings low enough to trigger.
+
+--------------------------- rate limit ---------------------------
+
+  RATE_LIMIT=10 ./shortener
+  25 requests sent one after another, as fast as curl manages
+
+  302 302 302 302 302 302 302 302 302 302 429 429 429 429 429 429 429 429
+  429 429 302 429 429 429 429
+
+  The first ten are the burst. After that the bucket is empty and requests are
+  refused with 429 until it refills, which is the single 302 in position 21,
+  about a tenth of a second later at ten per second.
+
+  Body of a refused request: "too many requests", with a Retry-After header.
+
+  After waiting a second: 302.
+
+------------------------ in flight limit ------------------------
+
+  MAX_IN_FLIGHT=5 ./shortener
+  hey -z 6s -c 50 -disable-redirects http://localhost:8080/seed250000
+
+  Status code distribution:
+    [302]	53266 responses
+    [503]	432681 responses
+
+  A second identical run, looking at the requests that were let through:
+    99% in 0.0014 secs
+
+  Five slots against fifty concurrent clients means most requests are refused.
+  The ones that are accepted are served at the same speed as a server with no
+  load problem at all, which is the whole point. The work that is admitted is
+  done properly and the rest is turned away immediately, rather than everything
+  being accepted and everything becoming slow.

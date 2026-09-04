@@ -379,3 +379,44 @@ failure.
 **`context.WithTimeout`**
 Makes a context that cancels itself after a set time. Used here to put a limit on how
 long shutting down may take.
+
+---
+
+## Step 8: [Timeouts, limits, and refusing work](08-backpressure.md)
+
+**`context.WithTimeout`**
+Makes a context that cancels itself after a set time, inheriting from the one passed in.
+The `cancel` it returns must be called, usually with `defer`, to release it.
+
+**middleware**
+A function taking an `http.Handler` and returning an `http.Handler` with something added
+around it. Because the type is the same going in and coming out, wrappers stack.
+
+**`struct{}`**
+A type holding nothing and using no memory. Used when only the fact of a value matters,
+such as a slot in a channel being used as a set of permits.
+
+**buffered channel as a semaphore**
+`make(chan struct{}, n)` with a send to take a slot and a receive to give it back. With a
+`select` and a `default`, a request that finds no free slot is refused instead of queued.
+
+**`http.Server` timeout fields**
+`ReadHeaderTimeout`, `ReadTimeout`, `WriteTimeout` and `IdleTimeout`. None of them are set
+by `http.ListenAndServe`, so without them a client can hold a connection open by sending
+a request very slowly.
+
+**`golang.org/x/time/rate`**
+A token bucket from the Go team. Tokens refill at a set rate up to a burst size,
+`Allow()` takes one and reports whether there was one to take.
+
+**`net.SplitHostPort`**
+Splits `"127.0.0.1:54321"` into host and port. `r.RemoteAddr` includes the port, which
+differs per connection, so it is stripped before being used to identify a client.
+
+**`atomic.CompareAndSwap`**
+Writes a new value only if the old value is still what you read. Lets several goroutines
+agree on which one of them does something, without a mutex.
+
+**`time.Tick`**
+A channel that receives at a fixed interval, used with `for range` for a loop that runs
+periodically for the life of the process.

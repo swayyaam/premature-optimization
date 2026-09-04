@@ -1,7 +1,8 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 7: every redirect is counted, and the counting happens on a queue
-// rather than during the request. See docs/07-async-queue.md.
+// Step 8: timeouts, a limit on requests in progress, and an optional rate
+// limit, so that one slow dependency cannot take the service down.
+// See docs/08-backpressure.md.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,6 +41,23 @@ const (
 type store struct {
 	db    *sql.DB
 	cache *redis.Client
+
+	// When the cache is broken every request fails the same way, so the
+	// message is printed at most once a second. Logging at the rate requests
+	// arrive is its own kind of outage.
+	lastCacheLog atomic.Int64
+}
+
+// logCacheError prints at most one cache message per second.
+func (s *store) logCacheError(code string, err error) {
+	now := time.Now().UnixNano()
+	last := s.lastCacheLog.Load()
+	if now-last < int64(time.Second) {
+		return
+	}
+	if s.lastCacheLog.CompareAndSwap(last, now) {
+		log.Printf("cache %q: %v", code, err)
+	}
 }
 
 // save inserts the URL under a new short code and returns the code.
@@ -89,12 +108,15 @@ func (s *store) cacheGet(ctx context.Context, code string) (string, bool) {
 		return "", false
 	}
 
+	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	defer cancel()
+
 	url, err := s.cache.Get(ctx, "link:"+code).Result()
 	if err == nil {
 		return url, true
 	}
 	if !errors.Is(err, redis.Nil) {
-		log.Printf("cache get %q: %v", code, err)
+		s.logCacheError(code, err)
 	}
 	return "", false
 }
@@ -104,8 +126,11 @@ func (s *store) cachePut(ctx context.Context, code, url string) {
 	if s.cache == nil {
 		return
 	}
+	ctx, cancel := context.WithTimeout(ctx, cacheTimeout)
+	defer cancel()
+
 	if err := s.cache.Set(ctx, "link:"+code, url, cacheTTL).Err(); err != nil {
-		log.Printf("cache set %q: %v", code, err)
+		s.logCacheError(code, err)
 	}
 }
 
@@ -196,6 +221,17 @@ func openCache(ctx context.Context) *redis.Client {
 	}
 	opts.PoolSize = maxConns
 
+	// A cache is only worth having while it is fast. These make the client give
+	// up quickly instead of holding a request while Redis is not answering.
+	// Without PoolTimeout a request waits for a free connection long after the
+	// deadline on its own call has passed. MaxRetries of -1 disables retries,
+	// which in this library is what -1 means and not what 0 means: 0 leaves the
+	// default of three, so a failing cache would be asked four times.
+	opts.ReadTimeout = cacheTimeout
+	opts.WriteTimeout = cacheTimeout
+	opts.PoolTimeout = cacheTimeout
+	opts.MaxRetries = -1
+
 	client := redis.NewClient(opts)
 	if err := client.Ping(ctx).Err(); err != nil {
 		log.Fatalf("cannot reach the cache: %v", err)
@@ -240,7 +276,17 @@ func main() {
 		addr = defaultAddr
 	}
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: withLimits(mux),
+
+		// Without these a connection can be held open indefinitely by a client
+		// that never finishes sending, or never reads what it asked for.
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 
 	// Serving happens on its own goroutine so main can wait for the signal.
 	go func() {

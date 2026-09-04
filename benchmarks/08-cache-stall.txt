@@ -1,0 +1,182 @@
+Step 8: what a stalled cache does to the service, before and after
+
+Date:    2026-09-04 17:42 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+
+Twenty seconds of load at fifty concurrent against GET /{code}. Five seconds in,
+Redis was told to stop answering for eight seconds:
+
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/seed250000
+  redis-cli CLIENT PAUSE 8000     # at t=5s
+
+Redis is only a cache here. Postgres held every link the whole time and was
+never unhealthy.
+
+Summary:
+
+  version                                    throughput   slowest request
+  no timeouts anywhere                       25787        8.1036 s
+  deadline on the cache call only            25957        5.0566 s
+  deadline plus client read, write and pool
+    timeouts, and retries disabled           25575        0.2064 s
+
+The middle version shows why a context deadline on the call is not enough on its
+own. The call gave up after 50ms, but the request then waited for a connection
+from the Redis pool, and the pool has its own timeout which was still at the
+library default.
+
+Throughput over the whole run is similar in all three because the run is mostly
+healthy. What changed is the worst case a client experienced, which went from
+eight seconds to two tenths of a second.
+
+During the stall itself the service serves roughly one thousand requests per
+second instead of forty two thousand, because every request waits the full 50ms
+for the cache before falling through to Postgres. It keeps serving correct
+answers throughout, and no request failed in any of the three runs.
+
+============================ 1. no timeouts ============================
+
+
+Summary:
+  Total:	20.0011 secs
+  Slowest:	8.1036 secs
+  Fastest:	0.0003 secs
+  Average:	0.0019 secs
+  Requests/sec:	25786.7859
+  
+  Total data:	27851256 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.811 [515713]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  1.621 [0]	|
+  2.431 [0]	|
+  3.242 [0]	|
+  4.052 [0]	|
+  4.862 [0]	|
+  5.673 [0]	|
+  6.483 [0]	|
+  7.293 [0]	|
+  8.104 [50]	|
+
+
+Latency distribution:
+  10%% in 0.0010 secs
+  25%% in 0.0011 secs
+  50%% in 0.0012 secs
+  75%% in 0.0012 secs
+  90%% in 0.0013 secs
+  95%% in 0.0014 secs
+  99%% in 0.0016 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0034 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0007 secs
+  resp wait:	0.0019 secs, 0.0002 secs, 8.1036 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0008 secs
+
+Status code distribution:
+  [302]	515764 responses
+
+
+
+
+==================== 2. deadline on the cache call only ====================
+
+
+Summary:
+  Total:	20.0008 secs
+  Slowest:	5.0566 secs
+  Fastest:	0.0001 secs
+  Average:	0.0019 secs
+  Requests/sec:	25957.3048
+  
+  Total data:	28035072 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.506 [519117]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  1.011 [0]	|
+  1.517 [0]	|
+  2.023 [0]	|
+  2.528 [0]	|
+  3.034 [0]	|
+  3.540 [25]	|
+  4.045 [0]	|
+  4.551 [0]	|
+  5.057 [25]	|
+
+
+Latency distribution:
+  10%% in 0.0010 secs
+  25%% in 0.0011 secs
+  50%% in 0.0012 secs
+  75%% in 0.0013 secs
+  90%% in 0.0014 secs
+  95%% in 0.0014 secs
+  99%% in 0.0017 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0037 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0007 secs
+  resp wait:	0.0019 secs, 0.0001 secs, 5.0566 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0008 secs
+
+Status code distribution:
+  [302]	519168 responses
+
+
+
+
+======================== 3. with client timeouts ========================
+
+
+Summary:
+  Total:	20.0010 secs
+  Slowest:	0.2064 secs
+  Fastest:	0.0003 secs
+  Average:	0.0020 secs
+  Requests/sec:	25574.6276
+  
+  Total data:	27622026 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.021 [508473]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.041 [0]	|
+  0.062 [26]	|
+  0.083 [0]	|
+  0.103 [214]	|
+  0.124 [1226]	|
+  0.145 [0]	|
+  0.165 [1522]	|
+  0.186 [0]	|
+  0.206 [57]	|
+
+
+Latency distribution:
+  10%% in 0.0010 secs
+  25%% in 0.0011 secs
+  50%% in 0.0012 secs
+  75%% in 0.0013 secs
+  90%% in 0.0014 secs
+  95%% in 0.0014 secs
+  99%% in 0.0017 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0036 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0006 secs
+  resp wait:	0.0019 secs, 0.0003 secs, 0.2063 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0009 secs
+
+Status code distribution:
+  [302]	511519 responses
+
+
+
