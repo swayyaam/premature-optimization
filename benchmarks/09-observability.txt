@@ -1,0 +1,111 @@
+Step 9: the same cache stall, seen through metrics
+
+Date:    2026-09-04 18:11 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+
+The experiment from step 8, repeated. Twenty seconds of load at fifty
+concurrent, with Redis paused for eight seconds starting five seconds in. This
+time /metrics was read once a second while it happened, and the change between
+readings worked out, which is what Prometheus does when it scrapes.
+
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/seed250000
+  redis-cli CLIENT PAUSE 8000     # at t=5s
+  curl -s localhost:8080/metrics  # once a second
+
+Counters only go up, so a rate is the difference between two readings divided by
+the time between them.
+
+   t   requests/s  cache_err/s  mean_ms
+   1            2            0      1.19
+   2        42811            0      1.08
+   3        44677            0      0.99
+   4        45101            0      0.98
+   5        45671            0      0.96
+   6        35741           70      1.24
+   7          411          419    123.92
+   8          382          368    141.05
+   9          355          390    137.29
+  10          409          379    137.09
+  11          377          388    134.87
+  12          392          406    132.87
+  13          385          374    137.42
+  14        22116          179      2.37
+  15        43961            0      1.04
+  16        45541            0      0.94
+  17        44400            0      1.02
+  18        42649            0      1.07
+  19        42415            0      1.08
+
+What hey reported for the same run, once, at the end:
+
+    Slowest:	0.2065 secs
+    Average:	0.0020 secs
+    Requests/sec:	25536.5308
+  Latency distribution:
+    10%% in 0.0010 secs
+    25%% in 0.0011 secs
+    50%% in 0.0012 secs
+    75%% in 0.0013 secs
+    90%% in 0.0014 secs
+    95%% in 0.0015 secs
+    99%% in 0.0019 secs
+  
+A 99th percentile of 1.9ms, for a run in which the service spent seven seconds
+serving about one percent of its usual traffic at about a hundred and thirty
+times its usual latency. The percentiles are not wrong. They describe twenty
+seconds that were mostly fine, and the seven bad seconds are too small a share
+of the requests to reach the 99th percentile, because during those seconds
+almost no requests were being served to count.
+
+The mean of about 130ms during the stall is roughly two cache timeouts. A
+request that cannot read the cache waits 50ms and gives up, reads Postgres, then
+tries to write the result back to the cache and waits another 50ms.
+
+----------------------------- raw hey output -----------------------------
+
+
+Summary:
+  Total:	20.0011 secs
+  Slowest:	0.2065 secs
+  Fastest:	0.0002 secs
+  Average:	0.0020 secs
+  Requests/sec:	25536.5308
+  
+  Total data:	27580932 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.021 [507752]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.041 [32]	|
+  0.062 [0]	|
+  0.083 [4]	|
+  0.103 [390]	|
+  0.124 [878]	|
+  0.145 [9]	|
+  0.165 [1571]	|
+  0.186 [0]	|
+  0.206 [121]	|
+
+
+Latency distribution:
+  10%% in 0.0010 secs
+  25%% in 0.0011 secs
+  50%% in 0.0012 secs
+  75%% in 0.0013 secs
+  90%% in 0.0014 secs
+  95%% in 0.0015 secs
+  99%% in 0.0019 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0034 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0005 secs
+  resp wait:	0.0019 secs, 0.0002 secs, 0.2064 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0007 secs
+
+Status code distribution:
+  [302]	510758 responses
+
+
+

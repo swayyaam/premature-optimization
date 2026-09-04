@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -52,8 +52,10 @@ func newRecorder(db *sql.DB) *recorder {
 func (r *recorder) record(code string) {
 	select {
 	case r.ch <- code:
+		clickOps.WithLabelValues("queued").Inc()
 	default:
 		r.dropped.Add(1)
+		clickOps.WithLabelValues("dropped").Inc()
 	}
 }
 
@@ -106,17 +108,18 @@ func (r *recorder) flush(batch []string) {
 	defer cancel()
 
 	if _, err := r.db.ExecContext(ctx, stmt.String(), args...); err != nil {
-		log.Printf("clicks: writing %d failed: %v", len(batch), err)
+		slog.Error("click batch failed", "count", len(batch), "error", err)
 		return
 	}
 	r.written.Add(int64(len(batch)))
+	clickOps.WithLabelValues("written").Add(float64(len(batch)))
 }
 
 // close stops the workers and waits for whatever is still queued to be written.
 func (r *recorder) close() {
 	close(r.ch)
 	r.wg.Wait()
-	log.Printf("clicks: %d written, %d dropped", r.written.Load(), r.dropped.Load())
+	slog.Info("click recorder stopped", "written", r.written.Load(), "dropped", r.dropped.Load())
 }
 
 // clickRecorder is how a handler reports that a short code was followed.
@@ -144,7 +147,7 @@ func (s *syncRecorder) record(code string) {
 	defer cancel()
 
 	if _, err := s.db.ExecContext(ctx, "INSERT INTO clicks (code) VALUES ($1)", code); err != nil {
-		log.Printf("clicks: %v", err)
+		slog.Error("click insert failed", "error", err)
 	}
 }
 
@@ -156,13 +159,13 @@ func (s *syncRecorder) close() {}
 func newClickRecorder(db *sql.DB) clickRecorder {
 	switch os.Getenv("CLICKS") {
 	case "off":
-		log.Print("clicks: not recorded")
+		slog.Info("clicks not recorded")
 		return nopRecorder{}
 	case "sync":
-		log.Print("clicks: written during the redirect")
+		slog.Info("clicks written during the request")
 		return &syncRecorder{db: db}
 	default:
-		log.Printf("clicks: queued, %d workers, batches of up to %d", workers, batchSize)
+		slog.Info("clicks queued", "workers", workers, "batch_size", batchSize, "queue_size", queueSize)
 		return newRecorder(db)
 	}
 }

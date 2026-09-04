@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -122,13 +122,13 @@ func (l *ipLimiter) middleware(next http.Handler) http.Handler {
 func withLimits(h http.Handler) http.Handler {
 	if rps := envFloat("RATE_LIMIT", 0); rps > 0 {
 		burst := int(envFloat("RATE_BURST", rps))
-		log.Printf("rate limit: %g requests per second per client, burst %d", rps, burst)
+		slog.Info("rate limit enabled", "per_second", rps, "burst", burst)
 		h = newIPLimiter(rps, burst).middleware(h)
 	}
 
 	limit := int(envFloat("MAX_IN_FLIGHT", defaultInFlight))
 	if limit > 0 {
-		log.Printf("in flight limit: %d requests", limit)
+		slog.Info("in flight limit enabled", "limit", limit)
 	}
 	return limitInFlight(limit, h)
 }
@@ -140,7 +140,7 @@ func envFloat(name string, fallback float64) float64 {
 	}
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
-		log.Fatalf("%s: %q is not a number", name, raw)
+		fatal("setting is not a number", "name", name, "value", raw)
 	}
 	return v
 }

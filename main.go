@@ -10,7 +10,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"os"
@@ -20,6 +20,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -56,7 +57,7 @@ func (s *store) logCacheError(code string, err error) {
 		return
 	}
 	if s.lastCacheLog.CompareAndSwap(last, now) {
-		log.Printf("cache %q: %v", code, err)
+		slog.Error("cache failing", "code", code, "error", err)
 	}
 }
 
@@ -112,10 +113,14 @@ func (s *store) cacheGet(ctx context.Context, code string) (string, bool) {
 	defer cancel()
 
 	url, err := s.cache.Get(ctx, "link:"+code).Result()
-	if err == nil {
+	switch {
+	case err == nil:
+		cacheOps.WithLabelValues("hit").Inc()
 		return url, true
-	}
-	if !errors.Is(err, redis.Nil) {
+	case errors.Is(err, redis.Nil):
+		cacheOps.WithLabelValues("miss").Inc()
+	default:
+		cacheOps.WithLabelValues("error").Inc()
 		s.logCacheError(code, err)
 	}
 	return "", false
@@ -165,7 +170,7 @@ func handleShorten(s *store) http.HandlerFunc {
 
 		code, err := s.save(r.Context(), req.URL)
 		if err != nil {
-			log.Printf("save %q: %v", req.URL, err)
+			slog.Error("save failed", "url", req.URL, "error", err)
 			http.Error(w, "could not save the link", http.StatusInternalServerError)
 			return
 		}
@@ -189,7 +194,7 @@ func handleRedirect(s *store, clicks clickRecorder) http.HandlerFunc {
 			return
 		}
 		if err != nil {
-			log.Printf("find %q: %v", code, err)
+			slog.Error("lookup failed", "code", code, "error", err)
 			http.Error(w, "could not look up the link", http.StatusInternalServerError)
 			return
 		}
@@ -211,13 +216,13 @@ func openCache(ctx context.Context) *redis.Client {
 		url = defaultRedisURL
 	}
 	if url == "" {
-		log.Print("no cache configured, every read will go to Postgres")
+		slog.Info("no cache configured, every read goes to Postgres")
 		return nil
 	}
 
 	opts, err := redis.ParseURL(url)
 	if err != nil {
-		log.Fatalf("bad cache settings: %v", err)
+		fatal("bad cache settings", "error", err)
 	}
 	opts.PoolSize = maxConns
 
@@ -234,12 +239,14 @@ func openCache(ctx context.Context) *redis.Client {
 
 	client := redis.NewClient(opts)
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Fatalf("cannot reach the cache: %v", err)
+		fatal("cannot reach the cache", "error", err)
 	}
 	return client
 }
 
 func main() {
+	setupLogging()
+
 	// ctx is cancelled the first time the process is asked to stop.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -251,7 +258,7 @@ func main() {
 
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		log.Fatalf("bad database settings: %v", err)
+		fatal("bad database settings", "error", err)
 	}
 	defer db.Close()
 
@@ -260,7 +267,7 @@ func main() {
 	db.SetConnMaxLifetime(time.Hour)
 
 	if err := db.PingContext(ctx); err != nil {
-		log.Fatalf("cannot reach the database: %v", err)
+		fatal("cannot reach the database", "error", err)
 	}
 
 	s := &store{db: db, cache: openCache(ctx)}
@@ -270,6 +277,7 @@ func main() {
 	mux.HandleFunc("POST /shorten", handleShorten(s))
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /{code}", handleRedirect(s, clicks))
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	addr := os.Getenv("ADDR")
 	if addr == "" {
@@ -278,7 +286,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    addr,
-		Handler: withLimits(mux),
+		Handler: measure(withLimits(mux)),
 
 		// Without these a connection can be held open indefinitely by a client
 		// that never finishes sending, or never reads what it asked for.
@@ -290,22 +298,22 @@ func main() {
 
 	// Serving happens on its own goroutine so main can wait for the signal.
 	go func() {
-		log.Printf("listening on %s", addr)
+		slog.Info("listening", "addr", addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server: %v", err)
+			fatal("server stopped", "error", err)
 		}
 	}()
 
 	<-ctx.Done()
 	stop()
-	log.Print("stopping")
+	slog.Info("stopping")
 
 	// Let requests already in progress finish, then write whatever clicks are
 	// still queued.
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("shutdown: %v", err)
+		slog.Error("shutdown", "error", err)
 	}
 	clicks.close()
 }

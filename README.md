@@ -44,6 +44,7 @@ curl -i localhost:8080/<code-from-above>
 | `POST` | `/shorten` | `{"url":"..."}` becomes `{"code":"...","short_url":"..."}` |
 | `GET` | `/{code}` | 302 redirect to the original URL |
 | `GET` | `/healthz` | Returns `ok` |
+| `GET` | `/metrics` | Counters and histograms for Prometheus |
 
 ## The steps
 
@@ -58,7 +59,7 @@ curl -i localhost:8080/<code-from-above>
 | 06 | Several copies of the app behind nginx | [06-horizontal-scaling.md](docs/06-horizontal-scaling.md) | done |
 | 07 | A queue for slow work | [07-async-queue.md](docs/07-async-queue.md) | done |
 | 08 | Rate limits, timeouts, and backpressure | [08-backpressure.md](docs/08-backpressure.md) | done |
-| 09 | Structured logging and metrics | | planned |
+| 09 | Structured logging and metrics | [09-observability.md](docs/09-observability.md) | done |
 | 10 | Read replicas, and sharding if the numbers call for it | | planned |
 
 [docs/go-glossary.md](docs/go-glossary.md) lists every Go term in the repo, in the order

@@ -420,3 +420,51 @@ agree on which one of them does something, without a mutex.
 **`time.Tick`**
 A channel that receives at a fixed interval, used with `for range` for a loop that runs
 periodically for the life of the process.
+
+---
+
+## Step 9: [Structured logs and metrics](09-observability.md)
+
+**`log/slog`**
+Structured logging in the standard library since Go 1.21. `slog.Info("msg", "key", value)`
+takes a fixed message and then name and value pairs, so the varying parts stay separate
+fields instead of being formatted into a sentence.
+
+**slog handler**
+Decides where log output goes and in what form. `slog.NewTextHandler` writes readable
+`key=value` lines, `slog.NewJSONHandler` writes JSON. The code doing the logging is the
+same either way.
+
+**`slog.SetDefault`**
+Sets the logger the package level `slog.Info` and `slog.Error` use.
+
+**variadic `...any`**
+A parameter taking any number of arguments of any type. `args ...any` in a signature,
+`args...` to pass a slice straight through.
+
+**embedding**
+Putting a type inside a struct with no field name. Its methods become methods of the outer
+struct, so `statusWriter` satisfies `http.ResponseWriter` without listing its methods.
+Declaring one of those methods on the outer type replaces just that one.
+
+**counter, gauge, histogram**
+A counter only goes up and is read as a rate of change. A gauge goes up and down and
+describes the present moment. A histogram counts observations falling into set ranges,
+which is what allows a percentile for one particular minute.
+
+**histogram buckets**
+The ranges a histogram counts into, chosen in advance. They have to span both a healthy
+value and a broken one to be of any use.
+
+**`/metrics` and scraping**
+The process holds its numbers in memory and publishes them at a URL. Prometheus fetches
+that URL periodically. Nothing is pushed out of the process and there is no agent.
+
+**label cardinality**
+Every distinct combination of label values is a separate series held in memory for the
+life of the process. Labels are for values from a small fixed set, such as a route or a
+status. Putting an identifier in a label makes a series per identifier.
+
+**`r.Pattern`**
+The routing pattern that matched a request, such as `GET /{code}`, rather than the path
+that was requested. What to use as a metric label, since the path is unbounded.
