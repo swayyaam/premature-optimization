@@ -1,0 +1,61 @@
+Step 3, measurement 2 of 2: unique index, and the connection pool configured
+Date:    2026-09-04 13:37 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+Table:   500,001 rows, 40 MB table, 15 MB index
+
+Pool settings:
+  db.SetMaxOpenConns(25)
+  db.SetMaxIdleConns(25)
+  db.SetConnMaxLifetime(time.Hour)
+
+Command:
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/seed250000
+
+----------------------------- raw hey output -----------------------------
+
+
+Summary:
+  Total:	20.0014 secs
+  Slowest:	0.1886 secs
+  Fastest:	0.0001 secs
+  Average:	0.0012 secs
+  Requests/sec:	41912.8475
+  
+  Total data:	45269064 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.019 [836202]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.038 [1243]	|
+  0.057 [392]	|
+  0.075 [195]	|
+  0.094 [128]	|
+  0.113 [63]	|
+  0.132 [88]	|
+  0.151 [2]	|
+  0.170 [0]	|
+  0.189 [2]	|
+
+
+Latency distribution:
+  10%% in 0.0005 secs
+  25%% in 0.0006 secs
+  50%% in 0.0009 secs
+  75%% in 0.0012 secs
+  90%% in 0.0017 secs
+  95%% in 0.0022 secs
+  99%% in 0.0051 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0032 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0018 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0025 secs
+  resp wait:	0.0012 secs, 0.0001 secs, 0.1886 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0030 secs
+
+Status code distribution:
+  [302]	838316 responses
+
+
+

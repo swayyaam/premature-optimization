@@ -247,3 +247,30 @@ inside them the way an exception carries a cause, and `errors.Is` walks that cha
 **`os.Getenv`**
 Reads an environment variable and returns an empty string when it is not set, so there is
 no separate presence check.
+
+---
+
+## Step 3: [Indexes and connection pooling](03-indexes-and-pooling.md)
+
+**`res.RowsAffected()`**
+Asks a `sql.Result` how many rows a statement changed. With
+`INSERT ... ON CONFLICT DO NOTHING`, one row means the insert happened and zero means
+something already held that key.
+
+**`SetMaxOpenConns`**
+Caps how many database connections may exist at once. Unlimited by default. Without a
+cap, a busy server keeps opening connections and closing them again, and a Postgres
+connection costs a new process on the server plus a handshake.
+
+**`SetMaxIdleConns`**
+How many unused connections the pool keeps ready instead of closing. The default of 2 is
+low for a server handling many requests at a time.
+
+**`SetConnMaxLifetime`**
+Retires a connection after a given age, so a long-running process does not keep
+connections to a database that has been restarted or moved.
+
+**`time.Duration`**
+A length of time, counted in nanoseconds, with its own type. Written by multiplying named
+units, as in `time.Hour` or `5 * time.Minute`. Every Go function that takes a timeout
+takes one of these.

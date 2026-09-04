@@ -1,0 +1,221 @@
+Step 3, supporting runs: which pool setting actually mattered
+Date:    2026-09-04 13:37 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+
+Four combinations, 10 seconds each, 50 concurrent, all with the index in place.
+Run in the order below, with a 30 second pause before the last one so that
+sockets left over from the earlier runs had drained.
+
+Summary:
+
+  settings                              req/s     p99       failed
+  both set to 25                        41800     0.0048    0
+  MaxOpenConns(25), idle at default 2   41022     0.0059    0
+  MaxIdleConns(25), open unlimited      37405     0.0159    0
+  both left at Go defaults              13565     0.0324    0
+
+Either setting on its own recovers most of the difference, so the cause is
+connection churn rather than the size of the pool.
+
+----------------------------- raw hey output -----------------------------
+
+########## SetMaxOpenConns(25) + SetMaxIdleConns(25) ##########
+
+Summary:
+  Total:	10.0009 secs
+  Slowest:	0.2463 secs
+  Fastest:	0.0001 secs
+  Average:	0.0012 secs
+  Requests/sec:	41800.2840
+  
+  Total data:	22574268 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.025 [417235]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.049 [429]	|
+  0.074 [213]	|
+  0.099 [76]	|
+  0.123 [51]	|
+  0.148 [32]	|
+  0.172 [1]	|
+  0.197 [3]	|
+  0.222 [0]	|
+  0.246 [1]	|
+
+
+Latency distribution:
+  10%% in 0.0004 secs
+  25%% in 0.0006 secs
+  50%% in 0.0009 secs
+  75%% in 0.0012 secs
+  90%% in 0.0018 secs
+  95%% in 0.0023 secs
+  99%% in 0.0048 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0037 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0025 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0007 secs
+  resp wait:	0.0012 secs, 0.0001 secs, 0.2463 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0031 secs
+
+Status code distribution:
+  [302]	418042 responses
+
+
+
+
+server-side connection errors during this run: 0
+
+########## SetMaxOpenConns(25), idle left at default 2 ##########
+
+Summary:
+  Total:	10.0026 secs
+  Slowest:	0.1288 secs
+  Fastest:	0.0001 secs
+  Average:	0.0012 secs
+  Requests/sec:	41021.5054
+  
+  Total data:	22157442 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.013 [408539]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.026 [989]	|
+  0.039 [234]	|
+  0.052 [204]	|
+  0.064 [146]	|
+  0.077 [62]	|
+  0.090 [52]	|
+  0.103 [29]	|
+  0.116 [23]	|
+  0.129 [44]	|
+
+
+Latency distribution:
+  10%% in 0.0005 secs
+  25%% in 0.0006 secs
+  50%% in 0.0009 secs
+  75%% in 0.0012 secs
+  90%% in 0.0018 secs
+  95%% in 0.0024 secs
+  99%% in 0.0059 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0034 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0021 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0005 secs
+  resp wait:	0.0012 secs, 0.0001 secs, 0.1288 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0006 secs
+
+Status code distribution:
+  [302]	410323 responses
+
+
+
+
+server-side connection errors during this run: 0
+
+########## SetMaxIdleConns(25), open left unlimited ##########
+
+Summary:
+  Total:	10.0039 secs
+  Slowest:	0.2466 secs
+  Fastest:	0.0001 secs
+  Average:	0.0013 secs
+  Requests/sec:	37404.9597
+  
+  Total data:	20206476 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.025 [371329]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.049 [1200]	|
+  0.074 [844]	|
+  0.099 [497]	|
+  0.123 [163]	|
+  0.148 [108]	|
+  0.173 [21]	|
+  0.197 [21]	|
+  0.222 [5]	|
+  0.247 [5]	|
+
+
+Latency distribution:
+  10%% in 0.0003 secs
+  25%% in 0.0005 secs
+  50%% in 0.0007 secs
+  75%% in 0.0009 secs
+  90%% in 0.0012 secs
+  95%% in 0.0016 secs
+  99%% in 0.0159 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0034 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0022 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0005 secs
+  resp wait:	0.0013 secs, 0.0001 secs, 0.2466 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0007 secs
+
+Status code distribution:
+  [302]	374194 responses
+
+
+
+
+server-side connection errors during this run: 0
+
+########## both left at Go defaults ##########
+
+Summary:
+  Total:	10.0203 secs
+  Slowest:	0.0636 secs
+  Fastest:	0.0001 secs
+  Average:	0.0037 secs
+  Requests/sec:	13564.7176
+  
+  Total data:	7339842 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.006 [120184]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.013 [16]	|
+  0.019 [7]	|
+  0.025 [723]	|
+  0.032 [12913]	|■■■■
+  0.038 [1836]	|■
+  0.045 [88]	|
+  0.051 [69]	|
+  0.057 [51]	|
+  0.064 [35]	|
+
+
+Latency distribution:
+  10%% in 0.0001 secs
+  25%% in 0.0002 secs
+  50%% in 0.0002 secs
+  75%% in 0.0004 secs
+  90%% in 0.0266 secs
+  95%% in 0.0302 secs
+  99%% in 0.0324 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0043 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0023 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0001 secs
+  resp wait:	0.0037 secs, 0.0001 secs, 0.0636 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0013 secs
+
+Status code distribution:
+  [302]	135923 responses
+
+
+
+
+server-side connection errors during this run: 0
+

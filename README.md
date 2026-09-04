@@ -50,7 +50,7 @@ curl -i localhost:8080/<code-from-above>
 | 00 | Overview: the goal, the plan, how to read this | [00-overview.md](docs/00-overview.md) | done |
 | 01 | One file, storage in memory, no framework | [01-minimal-api.md](docs/01-minimal-api.md) | done |
 | 02 | Postgres, with no tuning | [02-postgres.md](docs/02-postgres.md) | done |
-| 03 | Indexes and connection pooling | | planned |
+| 03 | Indexes and connection pooling | [03-indexes-and-pooling.md](docs/03-indexes-and-pooling.md) | done |
 | 04 | Load testing with `hey`, and a repeatable method | | planned |
 | 05 | Caching popular links in Redis | | planned |
 | 06 | Several copies of the app behind nginx | | planned |

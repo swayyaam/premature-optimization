@@ -1,7 +1,7 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 2: short links are stored in Postgres. The table has no index and the
-// connection pool is left at its defaults. See docs/02-postgres.md.
+// Step 3: the code column is indexed and the connection pool is configured.
+// See docs/03-indexes-and-pooling.md.
 package main
 
 import (
@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -21,6 +22,7 @@ const (
 	codeLength = 7
 	alphabet   = "abcdefghijklmnopqrstuvwxyz0123456789"
 	defaultDSN = "postgres://localhost:5432/shortener?sslmode=disable"
+	maxConns   = 25
 )
 
 // store reads and writes short links in Postgres.
@@ -31,26 +33,30 @@ type store struct {
 	db *sql.DB
 }
 
-// save picks an unused short code, inserts the URL under it, and returns the code.
+// save inserts the URL under a new short code and returns the code.
+//
+// The unique index on code decides whether a code was free, so the insert is
+// tried directly and retried on the rare occasion it collides.
 func (s *store) save(url string) (string, error) {
-	var code string
 	for {
-		code = randomCode()
+		code := randomCode()
 
-		var exists bool
-		err := s.db.QueryRow("SELECT EXISTS (SELECT 1 FROM links WHERE code = $1)", code).Scan(&exists)
+		res, err := s.db.Exec(
+			"INSERT INTO links (code, url) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING",
+			code, url,
+		)
 		if err != nil {
 			return "", err
 		}
-		if !exists {
-			break
+
+		rows, err := res.RowsAffected()
+		if err != nil {
+			return "", err
+		}
+		if rows == 1 {
+			return code, nil
 		}
 	}
-
-	if _, err := s.db.Exec("INSERT INTO links (code, url) VALUES ($1, $2)", code, url); err != nil {
-		return "", err
-	}
-	return code, nil
 }
 
 // find returns the URL stored under code. A missing code comes back as sql.ErrNoRows.
@@ -139,6 +145,14 @@ func main() {
 		log.Fatalf("bad database settings: %v", err)
 	}
 	defer db.Close()
+
+	// Left at their defaults, MaxIdleConns is 2 and MaxOpenConns is unlimited,
+	// so a busy server opens and closes a connection for nearly every request.
+	// Holding as many idle connections as the pool may open keeps them alive
+	// and reused instead.
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
+	db.SetConnMaxLifetime(time.Hour)
 
 	if err := db.Ping(); err != nil {
 		log.Fatalf("cannot reach the database: %v", err)

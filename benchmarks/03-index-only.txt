@@ -1,0 +1,81 @@
+Step 3, measurement 1 of 2: unique index added, connection pool left at Go's defaults
+Date:    2026-09-04 13:37 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+Table:   500,001 rows, 40 MB table, 15 MB index
+
+Isolates the index. The application binary is unchanged from step 2.
+
+Command:
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/seed250000
+
+Query plan after the index was created:
+
+                                                          QUERY PLAN                                                        
+  --------------------------------------------------------------------------------------------------------------------------
+   Index Scan using links_code_key on links  (cost=0.42..8.44 rows=1 width=31) (actual time=0.079..0.080 rows=1.00 loops=1)
+     Index Cond: (code = 'seed250000'::text)
+     Index Searches: 1
+     Buffers: shared hit=4
+   Planning:
+     Buffers: shared hit=67
+   Planning Time: 0.542 ms
+   Execution Time: 0.136 ms
+  (8 rows)
+  
+
+Note: an earlier run of this same configuration, taken immediately after the
+step 2 benchmark with no pause in between, returned 945 responses with status
+500. The server log showed "can't assign requested address", meaning the machine
+had run out of ephemeral ports from opening and closing Postgres connections.
+That did not reproduce once TIME_WAIT sockets were given 30 seconds to drain,
+so it is recorded here as something observed rather than as a property of this
+configuration. The run below is the clean one.
+
+----------------------------- raw hey output -----------------------------
+
+
+Summary:
+  Total:	20.0225 secs
+  Slowest:	0.1108 secs
+  Fastest:	0.0001 secs
+  Average:	0.0052 secs
+  Requests/sec:	9583.7073
+  
+  Total data:	10362060 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.011 [163882]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.022 [43]	|
+  0.033 [17587]	|■■■■
+  0.044 [8948]	|■■
+  0.055 [852]	|
+  0.066 [345]	|
+  0.078 [169]	|
+  0.089 [40]	|
+  0.100 [9]	|
+  0.111 [14]	|
+
+
+Latency distribution:
+  10%% in 0.0001 secs
+  25%% in 0.0002 secs
+  50%% in 0.0003 secs
+  75%% in 0.0007 secs
+  90%% in 0.0308 secs
+  95%% in 0.0335 secs
+  99%% in 0.0409 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0036 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0002 secs
+  resp wait:	0.0052 secs, 0.0001 secs, 0.1108 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0005 secs
+
+Status code distribution:
+  [302]	191890 responses
+
+
+
