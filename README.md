@@ -61,6 +61,7 @@ curl -i localhost:8080/<code-from-above>
 | 08 | Rate limits, timeouts, and backpressure | [08-backpressure.md](docs/08-backpressure.md) | done |
 | 09 | Structured logging and metrics | [09-observability.md](docs/09-observability.md) | done |
 | 10 | Whether the database needs scaling | [10-database-scaling.md](docs/10-database-scaling.md) | done |
+| 11 | The limit of one machine, and what is past it | [11-the-limit-of-one-machine.md](docs/11-the-limit-of-one-machine.md) | done |
 
 [docs/go-glossary.md](docs/go-glossary.md) lists every Go term in the repo, in the order
 it first came up.
@@ -129,7 +130,9 @@ capacity to spare when the cache was off, so a read replica would have been a se
 unsaturated database behind an application that could not fill the first one.
 
 The honest limit of all of this is that everything ran on one machine, which was always
-going to produce a one machine answer.
+going to produce a one machine answer. What that boundary is made of, and what would have
+to change to move past it, is written up in
+[docs/11-the-limit-of-one-machine.md](docs/11-the-limit-of-one-machine.md).
 
 ## Following the steps in order
 
