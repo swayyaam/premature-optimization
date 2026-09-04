@@ -62,7 +62,7 @@ came up. It grows as the project grows.
 | 7 | A queue for slow work |
 | 8 | Rate limits, timeouts, and backpressure |
 | 9 | Structured logging and metrics |
-| 10 | Read replicas, and sharding if the numbers call for it |
+| 10 | Whether the database needs scaling |
 
 The measurement that matters is requests per second the server sustains under load, with
 latency percentiles next to it. A total request count on its own does not say much.

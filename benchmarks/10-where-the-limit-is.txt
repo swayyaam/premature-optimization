@@ -1,0 +1,66 @@
+Step 10: looking for the bottleneck before scaling the database
+
+Date:    2026-09-04 18:37 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+
+Every measurement in this repo until now used fifty concurrent requests. These
+three sweeps ask what happens at other levels, and where the limit actually is.
+MAX_IN_FLIGHT was raised to 8192 so the in flight limit from step 8 could not be
+what was being measured.
+
+  hey -z 10s -c <concurrency> -disable-redirects <url>
+
+=================== 1. redirects, cache on, by concurrency ===================
+
+  conc   req/s       mean_ms    p99_ms
+  25     42098       0.60       0.90
+  50     42824       1.20       1.60
+  100    42507       2.40       2.90
+  200    42118       4.70       5.60
+  400    42327       9.40       11.30
+  800    41321       19.30      22.90
+
+Throughput is the same from 25 concurrent to 800, a range of 32 times, while
+mean and 99th percentile latency rise in proportion to the concurrency. That is
+what a hard ceiling looks like. Adding waiting clients does not produce more
+work done, it only makes each client wait longer for its turn.
+
+(The CPU figures printed by this sweep were sampled after each run rather than
+during it, so they are not reliable and have been left out. The during-run
+figures are in sweep 3 below and in benchmarks/05-cache-hit.txt.)
+
+============ 2. the same sweep against an endpoint that does nothing ============
+
+  /healthz (no round trip to anything) vs /{code} (one round trip)
+  conc   healthz      redirect    
+  50     90424        42151       
+  200    90131        42681       
+  800    98386        42120       
+
+/healthz returns a fixed string and talks to nothing. It is flat at about 90,000
+at every concurrency. The redirect endpoint is flat at about 42,000. The only
+difference between the two is that a redirect makes one round trip to a backend
+over a socket.
+
+=================== 3. redirects, cache off, by concurrency ===================
+
+  conc   req/s       p99_ms     postgres_cpu_during
+  50     42039       5.10       227%
+  200    42060       20.60      224%
+  800    42012       85.90      222%
+
+With the cache off, every one of those requests is a query to Postgres, and the
+ceiling is the same 42,000. Postgres held steady at about 225% of CPU on a
+machine with ten cores, sampled while the runs were in progress. It was not
+saturated at any point. It was doing the same amount of work per second at 800
+concurrent as at 50, because that is all the application handed it.
+
+------------------------------------ so ------------------------------------
+
+The ceiling is the same whether the round trip goes to Redis or to Postgres, and
+the backend at the far end is idle in the first case and unsaturated in the
+second. What costs 48,000 requests per second is the round trip itself, not what
+answers it.
+
+A read replica adds somewhere else to send a round trip. It cannot make a round
+trip cheaper, and the database was never the thing setting the limit.

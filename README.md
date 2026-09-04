@@ -60,10 +60,28 @@ curl -i localhost:8080/<code-from-above>
 | 07 | A queue for slow work | [07-async-queue.md](docs/07-async-queue.md) | done |
 | 08 | Rate limits, timeouts, and backpressure | [08-backpressure.md](docs/08-backpressure.md) | done |
 | 09 | Structured logging and metrics | [09-observability.md](docs/09-observability.md) | done |
-| 10 | Read replicas, and sharding if the numbers call for it | | planned |
+| 10 | Whether the database needs scaling | [10-database-scaling.md](docs/10-database-scaling.md) | done |
 
 [docs/go-glossary.md](docs/go-glossary.md) lists every Go term in the repo, in the order
 it first came up.
+
+## Where it ended up
+
+Redirects for a link that exists, measured with the same command each time on one laptop
+that was also running the load generator and the database.
+
+| After | Requests per second | 99th percentile |
+| --- | --- | --- |
+| A map in memory | 89,930 | 1.1 ms |
+| Postgres, no index | 395 | 309 ms |
+| An index on the code column | 9,584 | 40.9 ms |
+| A configured connection pool | 41,913 | 5.1 ms |
+| Redis in front of it | 43,021 | 1.5 ms |
+
+The last change is the interesting one. It moved throughput by less than the amount this
+machine varies on its own, and cut the 99th percentile by nearly four times. Step 5
+explains why, and step 10 explains what was limiting all of these numbers to about 42,000
+regardless.
 
 ## Following the steps in order
 
