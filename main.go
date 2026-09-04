@@ -1,60 +1,63 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 1: everything lives in this one file and every short link lives in memory.
-// See docs/01-minimal-api.md.
+// Step 2: short links are stored in Postgres. The table has no index and the
+// connection pool is left at its defaults. See docs/02-postgres.md.
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"math/rand/v2"
 	"net/http"
-	"sync"
+	"os"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const (
 	addr       = ":8080"
 	codeLength = 7
 	alphabet   = "abcdefghijklmnopqrstuvwxyz0123456789"
+	defaultDSN = "postgres://localhost:5432/shortener?sslmode=disable"
 )
 
-// store holds every short code and the URL it points at.
+// store reads and writes short links in Postgres.
 //
-// The map is guarded by a mutex because net/http runs every request in its own
-// goroutine, so several requests can touch this map at the same instant.
+// There is no mutex here. sql.DB is a pool of connections and is safe to use
+// from many goroutines at once.
 type store struct {
-	mu   sync.RWMutex
-	urls map[string]string
+	db *sql.DB
 }
 
-func newStore() *store {
-	return &store{urls: make(map[string]string)}
-}
-
-// save picks an unused short code, records the URL under it, and returns the code.
-func (s *store) save(url string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+// save picks an unused short code, inserts the URL under it, and returns the code.
+func (s *store) save(url string) (string, error) {
 	var code string
 	for {
 		code = randomCode()
-		if _, taken := s.urls[code]; !taken {
+
+		var exists bool
+		err := s.db.QueryRow("SELECT EXISTS (SELECT 1 FROM links WHERE code = $1)", code).Scan(&exists)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
 			break
 		}
 	}
 
-	s.urls[code] = url
-	return code
+	if _, err := s.db.Exec("INSERT INTO links (code, url) VALUES ($1, $2)", code, url); err != nil {
+		return "", err
+	}
+	return code, nil
 }
 
-// find returns the URL stored under code, and whether there was one.
-func (s *store) find(code string) (string, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	url, ok := s.urls[code]
-	return url, ok
+// find returns the URL stored under code. A missing code comes back as sql.ErrNoRows.
+func (s *store) find(code string) (string, error) {
+	var url string
+	err := s.db.QueryRow("SELECT url FROM links WHERE code = $1", code).Scan(&url)
+	return url, err
 }
 
 func randomCode() string {
@@ -74,7 +77,6 @@ type shortenResponse struct {
 	ShortURL string `json:"short_url"`
 }
 
-// handleShorten builds the POST /shorten handler, closing over the store it writes to.
 func handleShorten(s *store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req shortenRequest
@@ -87,7 +89,12 @@ func handleShorten(s *store) http.HandlerFunc {
 			return
 		}
 
-		code := s.save(req.URL)
+		code, err := s.save(req.URL)
+		if err != nil {
+			log.Printf("save %q: %v", req.URL, err)
+			http.Error(w, "could not save the link", http.StatusInternalServerError)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -98,14 +105,21 @@ func handleShorten(s *store) http.HandlerFunc {
 	}
 }
 
-// handleRedirect builds the GET /{code} handler, closing over the store it reads from.
 func handleRedirect(s *store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		url, ok := s.find(r.PathValue("code"))
-		if !ok {
+		code := r.PathValue("code")
+
+		url, err := s.find(code)
+		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
 		}
+		if err != nil {
+			log.Printf("find %q: %v", code, err)
+			http.Error(w, "could not look up the link", http.StatusInternalServerError)
+			return
+		}
+
 		http.Redirect(w, r, url, http.StatusFound)
 	}
 }
@@ -115,7 +129,22 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	s := newStore()
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = defaultDSN
+	}
+
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		log.Fatalf("bad database settings: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		log.Fatalf("cannot reach the database: %v", err)
+	}
+
+	s := &store{db: db}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shorten", handleShorten(s))

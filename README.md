@@ -18,9 +18,12 @@ organized.
 
 ## Running it
 
-Needs Go 1.22 or newer. Written on 1.26.
+Needs Go 1.22 or newer (written on 1.26) and a running Postgres.
 
 ```bash
+createdb shortener
+psql -d shortener -f sql/schema.sql
+psql -d shortener -f sql/seed.sql
 go run .
 ```
 
@@ -46,7 +49,7 @@ curl -i localhost:8080/<code-from-above>
 | --- | --- | --- | --- |
 | 00 | Overview: the goal, the plan, how to read this | [00-overview.md](docs/00-overview.md) | done |
 | 01 | One file, storage in memory, no framework | [01-minimal-api.md](docs/01-minimal-api.md) | done |
-| 02 | Postgres, with no tuning | | planned |
+| 02 | Postgres, with no tuning | [02-postgres.md](docs/02-postgres.md) | done |
 | 03 | Indexes and connection pooling | | planned |
 | 04 | Load testing with `hey`, and a repeatable method | | planned |
 | 05 | Caching popular links in Redis | | planned |

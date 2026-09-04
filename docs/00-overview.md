@@ -79,6 +79,7 @@ benchmarks/
   NN-<step>.txt        raw output from each load test
 go.mod                 the Go module
 main.go                the application
+sql/                   schema and seed data
 ```
 
 ## Running it

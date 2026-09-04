@@ -177,3 +177,73 @@ to be unguessable, which is what `crypto/rand` is for.
 **`log`**
 The built-in logger. Writes to standard error with a timestamp. `log.Fatal` prints and
 exits with a non-zero status.
+
+---
+
+## Step 2: [Adding Postgres](02-postgres.md)
+
+**`go get`**
+Adds a dependency and records it in `go.mod`.
+
+**`go.sum`**
+Holds a hash of every module version used, so a build fails if the contents of a
+published version ever change. Committed alongside `go.mod`.
+
+**`go mod tidy`**
+Adds whatever the code imports and drops whatever it no longer uses. Worth running before
+a commit.
+
+**`go install <module>@latest`**
+Downloads, compiles, and puts a command line program in `$(go env GOPATH)/bin`. How Go
+programs like `hey` are distributed, with no package manager and no runtime to install.
+
+**blank import**
+`_ "github.com/jackc/pgx/v5/stdlib"` loads a package purely for its side effects. Needed
+because an unreferenced import normally fails the build.
+
+**`init()`**
+A function that runs automatically when its package is loaded. The pgx driver uses one to
+register itself with `database/sql`, which is what makes `sql.Open("pgx", ...)` resolve.
+Together with the blank import it does the job of `Class.forName` in old JDBC code.
+
+**`database/sql`**
+The standard library's database interface. It defines connections, queries, and
+transactions, and knows no specific database. Go ships no drivers, so talking to Postgres
+needs one added.
+
+**`sql.DB`**
+What `sql.Open` returns. A pool of connections, not a single connection, safe to use from
+many goroutines at once. Shared state moves into the database, so no mutex is needed
+around it.
+
+**`sql.Open` and `Ping`**
+`Open` only parses settings and connects lazily, so a wrong host looks fine until the
+first query. `Ping` forces a connection immediately and is how you fail at startup
+instead.
+
+**`QueryRow` and `Scan`**
+`QueryRow` runs a statement expected to return a single row. `Scan(&url)` copies that
+row's columns into the variables you point it at, converting types and reporting a
+mismatch as an error.
+
+**`Exec`**
+Runs a statement with no result rows, such as an insert. Returns a `sql.Result` that can
+report rows affected.
+
+**placeholder `$1`**
+Postgres numbers its query placeholders instead of using `?`. Values travel separately
+from the statement text, so they are never parsed as SQL. Building the query with string
+concatenation is how SQL injection happens.
+
+**`sql.ErrNoRows`**
+The error `Scan` returns when the query matched nothing. A missing row arrives as an
+error rather than a null result.
+
+**`errors.Is`**
+Asks whether an error is, or wraps, a specific one. Go errors can carry another error
+inside them the way an exception carries a cause, and `errors.Is` walks that chain.
+`err == target` breaks as soon as anything wraps the error.
+
+**`os.Getenv`**
+Reads an environment variable and returns an empty string when it is not set, so there is
+no separate presence check.

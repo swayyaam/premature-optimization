@@ -1,0 +1,69 @@
+Step 1: short links in an in-memory map
+Commit:  c9a6460
+Date:    2026-09-04 13:03 IST
+Machine: Apple M5, 10 cores, macOS 26.6.2
+Go:      go1.26.4
+hey:     v0.1.5
+
+The server and the load generator ran on the same machine and shared its CPUs.
+
+Command:
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/q8m8vpz
+
+-disable-redirects stops hey from following the 302 out to the real internet,
+which would measure example.com instead of this server.
+
+Note on the response count below: hey stops recording individual results after
+1,000,000 of them (maxRes in requester/report.go), so the histogram, the latency
+percentiles and the status code line are drawn from the first 1,000,000
+responses. Requests/sec counts every response, so 89929.62 x 20.0007 seconds is
+roughly 1,798,700 requests actually served.
+
+----------------------------- raw hey output -----------------------------
+
+
+Summary:
+  Total:	20.0007 secs
+  Slowest:	0.0103 secs
+  Fastest:	0.0000 secs
+  Average:	0.0010 secs
+  Requests/sec:	89929.6247
+  
+  Total data:	97127586 bytes
+  Size/request:	97 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.001 [986539]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.002 [13284]	|■
+  0.003 [66]	|
+  0.004 [46]	|
+  0.005 [38]	|
+  0.006 [25]	|
+  0.007 [0]	|
+  0.008 [0]	|
+  0.009 [0]	|
+  0.010 [1]	|
+
+
+Latency distribution:
+  10%% in 0.0004 secs
+  25%% in 0.0005 secs
+  50%% in 0.0005 secs
+  75%% in 0.0006 secs
+  90%% in 0.0007 secs
+  95%% in 0.0008 secs
+  99%% in 0.0011 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0031 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0018 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0020 secs
+  resp wait:	0.0010 secs, 0.0000 secs, 0.0103 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0043 secs
+
+Status code distribution:
+  [302]	1000000 responses
+
+
+
