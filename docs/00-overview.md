@@ -77,6 +77,8 @@ docs/
   go-glossary.md       Go terms, in the order they came up
 benchmarks/
   NN-<step>.txt        raw output from each load test
+scripts/
+  bench.sh             runs one load test the same way every time
 go.mod                 the Go module
 main.go                the application
 sql/                   schema and seed data
@@ -98,3 +100,7 @@ Load tests here run on one laptop, with the load generator on the same machine a
 server. The two compete for the same CPU and there is no network between them, so these
 figures do not describe what the software would do on real hardware. They are useful for
 comparing one step against the next on the same machine, which is all they are used for.
+
+Each test runs five times and the median is quoted, with the spread across runs recorded
+next to it. `scripts/bench.sh` does this, and `docs/04-load-testing.md` explains what
+each part of the procedure is for.
