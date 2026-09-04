@@ -1,0 +1,6 @@
+# Build output
+/premature-optimization
+*.exe
+
+# Go
+vendor/
