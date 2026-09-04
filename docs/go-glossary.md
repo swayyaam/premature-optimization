@@ -274,3 +274,38 @@ connections to a database that has been restarted or moved.
 A length of time, counted in nanoseconds, with its own type. Written by multiplying named
 units, as in `time.Hour` or `5 * time.Minute`. Every Go function that takes a timeout
 takes one of these.
+
+---
+
+## Step 5: [Caching reads in Redis](05-caching.md)
+
+**`context.Context`**
+A value passed down a call chain carrying whether the work is still wanted. Something at
+the top can cancel it and everything below finds out. By convention it is the first
+parameter, named `ctx`, and passed along rather than stored in a struct.
+
+**`r.Context()`**
+The context of an HTTP request. It is cancelled when the client goes away, so a query
+still running for a browser that gave up can be stopped instead of finished.
+
+**`context.Background()`**
+The empty context, used at the start of a program where there is nothing to inherit from
+and nothing to cancel it.
+
+**`QueryRowContext`, `ExecContext`, `PingContext`**
+The `database/sql` methods that take a context. Same behaviour as the versions without
+one, except the query can be cancelled.
+
+**`redis.Nil`**
+The error go-redis returns when a key does not exist, matched with `errors.Is`. Redis
+reports a missing key as an error in the same way `database/sql` reports a missing row.
+
+**`os.LookupEnv`**
+Returns the value of an environment variable plus a second value saying whether it was
+set at all. Tells "missing" apart from "set to an empty string", which `os.Getenv` cannot
+do.
+
+**cache-aside**
+Look in the cache, fall back to the database on a miss, then write what the database
+returned into the cache. The cache holds only copies of data that lives elsewhere, so
+losing it costs speed and not correctness.

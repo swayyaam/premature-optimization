@@ -1,10 +1,11 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 3: the code column is indexed and the connection pool is configured.
-// See docs/03-indexes-and-pooling.md.
+// Step 5: reads look in Redis before they go to Postgres.
+// See docs/05-caching.md.
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -15,33 +16,35 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
-	addr       = ":8080"
-	codeLength = 7
-	alphabet   = "abcdefghijklmnopqrstuvwxyz0123456789"
-	defaultDSN = "postgres://localhost:5432/shortener?sslmode=disable"
-	maxConns   = 25
+	addr            = ":8080"
+	codeLength      = 7
+	alphabet        = "abcdefghijklmnopqrstuvwxyz0123456789"
+	defaultDSN      = "postgres://localhost:5432/shortener?sslmode=disable"
+	defaultRedisURL = "redis://localhost:6379/0"
+	maxConns        = 25
+	cacheTTL        = time.Hour
 )
 
-// store reads and writes short links in Postgres.
+// store reads and writes short links.
 //
-// There is no mutex here. sql.DB is a pool of connections and is safe to use
-// from many goroutines at once.
+// cache is nil when no cache is configured, and every read then goes to
+// Postgres. A cache that returns an error is treated as a miss, so the read
+// falls through to Postgres rather than failing.
 type store struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *redis.Client
 }
 
 // save inserts the URL under a new short code and returns the code.
-//
-// The unique index on code decides whether a code was free, so the insert is
-// tried directly and retried on the rare occasion it collides.
-func (s *store) save(url string) (string, error) {
+func (s *store) save(ctx context.Context, url string) (string, error) {
 	for {
 		code := randomCode()
 
-		res, err := s.db.Exec(
+		res, err := s.db.ExecContext(ctx,
 			"INSERT INTO links (code, url) VALUES ($1, $2) ON CONFLICT (code) DO NOTHING",
 			code, url,
 		)
@@ -59,11 +62,49 @@ func (s *store) save(url string) (string, error) {
 	}
 }
 
-// find returns the URL stored under code. A missing code comes back as sql.ErrNoRows.
-func (s *store) find(code string) (string, error) {
+// find returns the URL stored under code, looking in the cache first.
+// A missing code comes back as sql.ErrNoRows.
+func (s *store) find(ctx context.Context, code string) (string, error) {
+	if url, ok := s.cacheGet(ctx, code); ok {
+		return url, nil
+	}
+
 	var url string
-	err := s.db.QueryRow("SELECT url FROM links WHERE code = $1", code).Scan(&url)
-	return url, err
+	err := s.db.QueryRowContext(ctx, "SELECT url FROM links WHERE code = $1", code).Scan(&url)
+	if err != nil {
+		return "", err
+	}
+
+	s.cachePut(ctx, code, url)
+	return url, nil
+}
+
+// cacheGet reports whether the cache held this code. A missing cache, and a
+// cache that answers with an error, both report a miss so the caller falls
+// through to Postgres.
+func (s *store) cacheGet(ctx context.Context, code string) (string, bool) {
+	if s.cache == nil {
+		return "", false
+	}
+
+	url, err := s.cache.Get(ctx, "link:"+code).Result()
+	if err == nil {
+		return url, true
+	}
+	if !errors.Is(err, redis.Nil) {
+		log.Printf("cache get %q: %v", code, err)
+	}
+	return "", false
+}
+
+// cachePut stores a link. Failing to cache is not a reason to fail the request.
+func (s *store) cachePut(ctx context.Context, code, url string) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.Set(ctx, "link:"+code, url, cacheTTL).Err(); err != nil {
+		log.Printf("cache set %q: %v", code, err)
+	}
 }
 
 func randomCode() string {
@@ -95,7 +136,7 @@ func handleShorten(s *store) http.HandlerFunc {
 			return
 		}
 
-		code, err := s.save(req.URL)
+		code, err := s.save(r.Context(), req.URL)
 		if err != nil {
 			log.Printf("save %q: %v", req.URL, err)
 			http.Error(w, "could not save the link", http.StatusInternalServerError)
@@ -115,7 +156,7 @@ func handleRedirect(s *store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		code := r.PathValue("code")
 
-		url, err := s.find(code)
+		url, err := s.find(r.Context(), code)
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
@@ -134,7 +175,34 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok\n"))
 }
 
+// openCache returns nil when REDIS_URL is set to an empty string, which runs the
+// application with no cache at all.
+func openCache(ctx context.Context) *redis.Client {
+	url, set := os.LookupEnv("REDIS_URL")
+	if !set {
+		url = defaultRedisURL
+	}
+	if url == "" {
+		log.Print("no cache configured, every read will go to Postgres")
+		return nil
+	}
+
+	opts, err := redis.ParseURL(url)
+	if err != nil {
+		log.Fatalf("bad cache settings: %v", err)
+	}
+	opts.PoolSize = maxConns
+
+	client := redis.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		log.Fatalf("cannot reach the cache: %v", err)
+	}
+	return client
+}
+
 func main() {
+	ctx := context.Background()
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = defaultDSN
@@ -146,19 +214,15 @@ func main() {
 	}
 	defer db.Close()
 
-	// Left at their defaults, MaxIdleConns is 2 and MaxOpenConns is unlimited,
-	// so a busy server opens and closes a connection for nearly every request.
-	// Holding as many idle connections as the pool may open keeps them alive
-	// and reused instead.
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
 	db.SetConnMaxLifetime(time.Hour)
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		log.Fatalf("cannot reach the database: %v", err)
 	}
 
-	s := &store{db: db}
+	s := &store{db: db, cache: openCache(ctx)}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /shorten", handleShorten(s))

@@ -18,7 +18,7 @@ organized.
 
 ## Running it
 
-Needs Go 1.22 or newer (written on 1.26) and a running Postgres.
+Needs Go 1.22 or newer (written on 1.26), a running Postgres, and a running Redis.
 
 ```bash
 createdb shortener
@@ -26,6 +26,8 @@ psql -d shortener -f sql/schema.sql
 psql -d shortener -f sql/seed.sql
 go run .
 ```
+
+`REDIS_URL=` runs it with no cache.
 
 ```bash
 curl -X POST localhost:8080/shorten -d '{"url":"https://go.dev"}'
@@ -52,7 +54,7 @@ curl -i localhost:8080/<code-from-above>
 | 02 | Postgres, with no tuning | [02-postgres.md](docs/02-postgres.md) | done |
 | 03 | Indexes and connection pooling | [03-indexes-and-pooling.md](docs/03-indexes-and-pooling.md) | done |
 | 04 | Load testing with `hey`, and a repeatable method | [04-load-testing.md](docs/04-load-testing.md) | done |
-| 05 | Caching popular links in Redis | | planned |
+| 05 | Caching popular links in Redis | [05-caching.md](docs/05-caching.md) | done |
 | 06 | Several copies of the app behind nginx | | planned |
 | 07 | A queue for slow work | | planned |
 | 08 | Rate limits, timeouts, and backpressure | | planned |
