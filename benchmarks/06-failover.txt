@@ -1,0 +1,65 @@
+Step 6: killing an instance while traffic is flowing
+Commit:   8f767aa (working tree, step 6 not yet committed)
+Date:     2026-09-04 15:27 IST
+Machine:  Apple M5, 10 cores, macOS 26.6.2
+
+Three instances on 8081, 8082 and 8083 behind nginx on 8080.
+Twenty seconds of load at fifty concurrent. Seven seconds in, the instance on
+8082 was killed with SIGTERM and not restarted.
+
+Command:
+  hey -z 20s -c 50 -disable-redirects http://localhost:8080/seed250000
+  kill $(cat run/app-8082.pid)    # at t=7s
+
+Every request succeeded. nginx sends a request that fails to the next instance
+in the list, so the loss showed up as neither an error nor a drop in
+throughput.
+
+----------------------------- raw hey output -----------------------------
+
+
+Summary:
+  Total:	20.0011 secs
+  Slowest:	0.0062 secs
+  Fastest:	0.0002 secs
+  Average:	0.0013 secs
+  Requests/sec:	37343.8793
+  
+  Total data:	40333680 bytes
+  Size/request:	54 bytes
+
+Response time histogram:
+  0.000 [1]	|
+  0.001 [18109]	|■■
+  0.001 [464424]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  0.002 [253781]	|■■■■■■■■■■■■■■■■■■■■■■
+  0.003 [10208]	|■
+  0.003 [279]	|
+  0.004 [56]	|
+  0.004 [3]	|
+  0.005 [18]	|
+  0.006 [27]	|
+  0.006 [14]	|
+
+
+Latency distribution:
+  10%% in 0.0010 secs
+  25%% in 0.0012 secs
+  50%% in 0.0013 secs
+  75%% in 0.0015 secs
+  90%% in 0.0017 secs
+  95%% in 0.0018 secs
+  99%% in 0.0021 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0000 secs, 0.0000 secs, 0.0034 secs
+  DNS-lookup:	0.0000 secs, 0.0000 secs, 0.0011 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0013 secs
+  resp wait:	0.0013 secs, 0.0002 secs, 0.0055 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0013 secs
+
+Status code distribution:
+  [302]	746920 responses
+
+
+

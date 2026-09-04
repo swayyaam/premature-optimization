@@ -55,7 +55,7 @@ curl -i localhost:8080/<code-from-above>
 | 03 | Indexes and connection pooling | [03-indexes-and-pooling.md](docs/03-indexes-and-pooling.md) | done |
 | 04 | Load testing with `hey`, and a repeatable method | [04-load-testing.md](docs/04-load-testing.md) | done |
 | 05 | Caching popular links in Redis | [05-caching.md](docs/05-caching.md) | done |
-| 06 | Several copies of the app behind nginx | | planned |
+| 06 | Several copies of the app behind nginx | [06-horizontal-scaling.md](docs/06-horizontal-scaling.md) | done |
 | 07 | A queue for slow work | | planned |
 | 08 | Rate limits, timeouts, and backpressure | | planned |
 | 09 | Structured logging and metrics | | planned |

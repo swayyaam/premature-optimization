@@ -1,7 +1,7 @@
 // Command premature-optimization is a URL shortener.
 //
-// Step 5: reads look in Redis before they go to Postgres.
-// See docs/05-caching.md.
+// Step 6: several copies of this run at once behind nginx, so the listen
+// address comes from the environment. See docs/06-horizontal-scaling.md.
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	addr            = ":8080"
+	defaultAddr     = ":8080"
 	codeLength      = 7
 	alphabet        = "abcdefghijklmnopqrstuvwxyz0123456789"
 	defaultDSN      = "postgres://localhost:5432/shortener?sslmode=disable"
@@ -228,6 +228,11 @@ func main() {
 	mux.HandleFunc("POST /shorten", handleShorten(s))
 	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /{code}", handleRedirect(s))
+
+	addr := os.Getenv("ADDR")
+	if addr == "" {
+		addr = defaultAddr
+	}
 
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))

@@ -4,3 +4,6 @@
 
 # Go
 vendor/
+
+# nginx working directory and instance binaries
+/run/

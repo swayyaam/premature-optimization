@@ -79,6 +79,9 @@ benchmarks/
   NN-<step>.txt        raw output from each load test
 scripts/
   bench.sh             runs one load test the same way every time
+  cluster.sh           starts several instances behind nginx
+deploy/
+  nginx.conf           the load balancer configuration
 go.mod                 the Go module
 main.go                the application
 sql/                   schema and seed data
