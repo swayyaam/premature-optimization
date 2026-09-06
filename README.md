@@ -64,7 +64,7 @@ curl -i localhost:8080/<code-from-above>
 | 11 | The limit of one machine, and what is past it | [11-the-limit-of-one-machine.md](docs/11-the-limit-of-one-machine.md) | done |
 
 [docs/go-glossary.md](docs/go-glossary.md) lists every Go term in the repo, in the order
-it first came up.
+it first came up. [article.md](article.md) is the whole thing written up as one read.
 
 ## Where it ended up
 
